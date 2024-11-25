@@ -1,8 +1,18 @@
 use serde::{Deserialize, Serialize};
-use crate::packet::{PacketSymbols, PacketType, ProcessedPacket};
+use crate::user::User;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct HandshakePacket {
-  pub src: String,
+  pub status: HandshakeStatus,
+  pub src: User,
   pub dst: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Copy, Clone)]
+pub enum HandshakeStatus {
+  Request,
+  Accept,
+  Deny,
+  NotFound,
+  ServerError,
 }
