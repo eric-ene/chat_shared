@@ -1,11 +1,15 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct AssignRequestPacket {}
+pub struct AssignRequestPacket {
+  pub e: Vec<u8>,
+  pub n: Vec<u8>,
+}
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AssignPacket {
   pub content: String,
+  pub aes_key: Vec<u8>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

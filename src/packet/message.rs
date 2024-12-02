@@ -4,5 +4,5 @@ use serde::{Deserialize, Serialize};
 pub struct MessagePacket {
   pub sender: String,
   pub receiver: String,
-  pub content: String,
+  pub content: Vec<u8>,
 }

@@ -1,10 +1,15 @@
 pub mod message;
 pub mod handshake;
 pub mod assign;
+pub mod header;
+pub mod encrypt;
 
 use serde::{Deserialize, Serialize};
+use eric_aes::{rsatools, aestools};
+use eric_aes::aestools::CryptError;
 use crate::packet::assign::{AssignPacket, AssignRequestPacket, NameRequestPacket, NameResponsePacket};
 use crate::packet::handshake::HandshakePacket;
+use crate::packet::header::Header;
 use crate::packet::message::MessagePacket;
 
 #[repr(u8)]
@@ -24,9 +29,11 @@ pub enum PacketSymbols {
   Eom = 0x04,
 }
 
+pub const HEADER_SIZE: usize = 8;
+
 #[derive(Debug)]
 pub struct Packet {
-  pub header: Vec<u8>, // THIS SHOULD ALWAYS HAVE A SIZE OF 8
+  pub header: Vec<u8>, // THIS SHOULD ALWAYS HAVE A SIZE OF HEADER_SIZE
   pub data: Vec<u8>,
 }
 
@@ -96,15 +103,37 @@ impl TryFrom<u8> for PacketType {
 
 impl Packet {
   pub fn from_bytes(bytes: &mut Vec<u8>) -> Self {
-    let header = bytes[0..8].to_vec();
-    let data = bytes[8..bytes.len()-1].to_vec();
+    let header = bytes[0..HEADER_SIZE].to_vec();
+    let data = bytes[HEADER_SIZE..bytes.len()].to_vec();
     
     *bytes = Vec::new();
-
     Self {
       header,
       data
     }
+  }
+  pub fn from_rsa_bytes(bytes: &Vec<u8>, d: &Vec<u8>, n: &Vec<u8>) -> Self {
+    let header = bytes[0..HEADER_SIZE].to_vec();
+    let data = bytes[HEADER_SIZE..bytes.len()].to_vec();
+    
+    let decrypted_data = rsatools::decrpyt_key(&data, &d, &n);
+    
+    Self {
+      header,
+      data: decrypted_data
+    }
+  }
+  
+  pub fn from_aes_bytes(bytes: &Vec<u8>, key: &Vec<u8>) -> Result<Self, CryptError> {
+    let header = bytes[0..HEADER_SIZE].to_vec();
+    let data = bytes[HEADER_SIZE..bytes.len()].to_vec();
+
+    let decrypted_data = aestools::decrypt(&key, data)?;
+
+    Ok(Self {
+      header,
+      data: decrypted_data
+    })
   }
 
   pub fn process(&self) -> Result<ProcessedPacket, String> {
@@ -113,8 +142,8 @@ impl Packet {
 }
 
 impl ProcessedPacket {
-  fn get_header(&self) -> [u8; 8] {
-    let mut header = [0u8; 8];
+  fn get_header(&self) -> [u8; HEADER_SIZE] {
+    let mut header = [0u8; HEADER_SIZE];
 
     header[0] = PacketType::from(self) as u8;
 
@@ -127,26 +156,32 @@ impl ProcessedPacket {
   }
 
   pub fn new_raw(packet: ProcessedPacket) -> Vec<u8> {
-    let mut raw_packet = packet.start_packet(); // header
+    let mut header = packet.start_packet(); // header
 
-    let bytes = match serde_json::to_vec(&packet) {
+    let mut body = match serde_json::to_vec(&packet) {
       Ok(bytes) => bytes,
       Err(e) => {
         panic!(
           "Error serializing packet: {}\
           Packet contents: {:?}",
           e,
-          raw_packet
+          packet
         );
       }
     };
     
-    
-    for byte in &bytes {
-      raw_packet.push(*byte);
-    }
+    // pad to size that's a multiple of 16 bytes (128 bits) for AES
+    let mut bytes_left = body.len() % 16;
+    bytes_left = (16 - bytes_left) % 16;
+    body.append(&mut vec![' ' as u8; bytes_left]);
 
-    raw_packet.push(PacketSymbols::Eom as u8);
-    return raw_packet;
+    // finish setting up header
+    header.set_data_length(body.len());
+    
+    let mut retval = Vec::new();
+    retval.append(&mut header);
+    retval.append(&mut body);
+    
+    return retval;
   }
 }
